@@ -111,4 +111,68 @@ license: 证书类型，对应生成文件LICENSE
    git push -u origin master
    ```
 
-   
+## 本地提交不需要输入用户名密码
+
+### 使用ssh方式
+
+1.  ssh连接原理 
+
+ 在我们提交代码的时候， github需要用我们账号对应的公钥去解密我们提交的代码，如果能正确的解密说明当前提交代码的用户合法的。  **所以在提交代码事先我们的电脑中需要持有一个私钥我们的github账户中也有持有一个公钥** 。
+
+![image-20201121132731437](../github%E5%AD%A6%E4%B9%A0/image-20201121132731437.png)
+
+2. 创建ssh key
+
+-  获取公钥： 
+
+  -  .注册一个github账号：[https://www.cnblogs.com/Amedeo/p/76](https://link.zhihu.com/?target=https%3A//www.cnblogs.com/Amedeo/p/7664224.html) 
+
+  -  生成sshkey 
+
+  -  输入如下命令：目的在电脑中生成公钥 
+
+    ```text
+    ssh-keygen -t rsa -b 4096 -C 你的邮箱
+    ```
+
+    
+
+  -  然后一直回车 直到出现 下面的文字图案（说明公钥生成成功了） 
+
+    ```text
+    +---[RSA 4096]----+
+    |  . ... oo +=o   |
+    |   + +o o.o ooo  |
+    |  . B oB   =.= . |
+    |   o B  + = = B  |
+    |    E   S. * B o |
+    |         o+ o . .|
+    |       ..o..     |
+    |      . =.       |
+    |       ..o       |
+    +----[SHA256]-----+
+    ```
+
+    
+
+  -  查看生成的公钥&将公钥添加到github账户中 
+
+    ```text
+    cat ~/.ssh/id_rsa.pub
+    ```
+
+    ![image-20201121133310311](../github%E5%AD%A6%E4%B9%A0/image-20201121133310311.png)
+
+3. 测试是否成功
+
+    到了这一步我们就在我的电脑中持有了私密，我的github账号中持有了公钥就可以进行ssh连接测试了。 运行命令：
+
+   ```text
+   ssh -T git@github.com
+   ```
+
+    出现以下提示表示成功哦！！ 
+
+   ```text
+   Hi 你的用户名! You've successfully authenticated
+   ```

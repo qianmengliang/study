@@ -56,7 +56,7 @@ license: 证书类型，对应生成文件LICENSE
 
    git commit  -m  "提交信息"  （注：“提交信息”里面换成你需要，如“first commit”）
 
-   git push -u origin master  （注：此操作目的是把本地仓库push到github上面，此步骤需要你输入帐号和密码）
+   git push -u origin master  （注：此操作目的是把本地仓库push到github上面，此步骤需要你输入帐号和密码）(1160589162@qq.com   )
 
    ![image-20201121121543467](image-20201121121543467.png)
 

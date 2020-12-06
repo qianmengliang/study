@@ -2,7 +2,7 @@
 
 ## JVM基础入门
 
-java通过javac转译class文件，classLoader通过java类库使用字节码解释器或者JIT即时编译器进行执行引擎；jvm是按需动态加载，采用双亲委派机制
+java通过javac转译class文件，classLoader通过java类库使用字节码解释器或者JIT即时编译器进行执行引擎；jvm是按需动态加载，采用双亲委派机制 
 
 ## 类加载-初始化
 
@@ -80,13 +80,300 @@ java通过javac转译class文件，classLoader通过java类库使用字节码解
 
 3. 有序性保障
 
-- CPU内存屏障
+- CPU硬件内存屏障
 
-sfence：写屏障
+sfence(写屏障)：在sfence指令前的写操作当必须在sfence指令后的写操作前完成
 
-lfence:读屏障
+lfence(读屏障):在sfence指令前的读操作当必须在sfence指令后的读操作前完成
 
-mfence:读写屏障
+mfence(读写屏障):在sfence指令前的读写操作当必须在sfence指令后的读写操作前完成
 
-- intellock汇编指令（volitale）
+原子指令：如x86上的“lock....”指令是一个Full Barrier，执行时会锁住内存子系统来确保执行顺序，甚至跨多个CPU，Software Locks通常使用内存屏障或原子指令来实现变量可见性和保持程序顺序。
+
+- JVM级别如何规范
+
+  - LoadLoad屏障
+  - StoreStore屏障
+  - LoadStore屏障
+  - StoreLoad屏障
+  
+- volatile的实现细节
+
+  - 字节码层面
+    - ACC_VOLATILE
+  - jvm层面
+    - StoreStoreBarrier     volatile写操作    StoreLoadBarrier
+    - LoaLoadBarrier    volatile读操作    LoadStoreBarrier
+    - volatile内存区的读写都加屏障
+  - os和硬件层面
+    - 使用hsdis  HotSpot Dis Assembler观察windows  lock指令实现
+  
+- synchronized实现细节
+
+  - 字节码层面
+
+    - ACC_SYNCHRONIZED
+
+    - monitorenter  monitorexit
+
+  - jvm层面
+
+    - C C++调用了操作系统提供的同步机制
+
+  - os和硬件层面
+
+    - X86: lock comxchg.xxx
+  
+- 对象创建过程？
+  - class loading
+  - class linking(verification,preoaration,resolution)
+  - class initializing
+  - 申请对象内存
+  - 成员变量赋默认值
+  - 调用构造方法<init>
+    - 成员变量顺序赋初始值
+    - 执行构造方法语句
+  
+- 对象在内存中的存储布局
+  - 普通对象
+    - 对象头：markword 8
+    - ClassPointer指针：-XX:+UseCompressedClassPointers为4字节，不开启为8字节
+    - 实例数据
+      - 引用类型
+    - padding对齐，8的倍数
+  - 数组对象
+    - 对象头：markword 8
+    - ClassPointer指针
+    - 数组长度：4字节
+    - 数据数据
+    - 对齐 8倍数
+  
+- Heap
+
+- Method Area
+
+  - Perm Space(1.8)
+
+    字符串常量位于PermSpace
+
+    FGC不会清理
+
+    大小启动的时候指定，不能变
+
+  - Meta Space(>=1.8)
+
+    字符串常量位于堆
+
+    会触发FGC清理
+
+    不设定的话，最大就是物理内存
+
+- Runtime Constant Pool
+
+- Native Method Stack
+
+- Direct Memory
+
+  - jvm可以直接访问的内核空间的内存（OS管理的内存）
+  - NIO，提高效率，实现zero copy
+
+4. 常用指令
+
+- store
+
+- load
+
+- pop
+
+- mul
+
+- sub
+
+- invoke
+
+  - invokeStatic
+
+  - invokeVirtual
+
+  - invokeinterface
+
+  - invokeSpecial
+
+    可以直接定位，不需要多态的方法
+
+    private方法，构造方法
+
+  -  invokeDynamic
+
+    jvm最难指令
+
+    lambda表达式或者反射或者其他动态语言scala kotlin,或者CGLib ASM,动态产生class，会用到的指令
+
+## JVM调优理论-GC Collector  三色标记
+
+没有引用标记的就是垃圾
+
+查找垃圾的算法：
+
+- Root Searching(根可达算法)
+- 引用计数
+
+清理垃圾的算法：
+
+- Mark-Sweep（标记清除）
+  - 算法相对简单
+  - 存活对象比较多的情况下效率高
+  - 两遍扫描，效率偏低
+  - 容易产生碎片
+- Copying(拷贝)
+  - 先将内存一分为二，将有用的复制一份，其他的清掉
+  - 效率高，没有碎片，浪费空间
+- Mark-Compact（标记压缩）
+  - 将有用的移到到前面
+  - 没有碎片，效率偏低
+  - 两遍扫描，指针需调整
+
+jvm内存分代模型（用于分代垃圾回收算法）
+
+- 部分垃圾回收器使用的模型
+  - 除Epsilon AGC Shendoah之外都是使用逻辑分代模型
+  - G1是逻辑分代，物理不分代
+  - 除此之外不仅逻辑分代，而且物理分代
+
+![image-20201203210030145](image-20201203210030145.png)
+
+- 栈上分配
+  - 线程私有小对象
+  - 无逃逸
+  - 支持标量替换
+  - 无需调整
+- 线程本地分配TLAB
+  - 占用eden，默认1%
+  - 多线程的时候不用竞争eden就可以申请空间，提高效率
+  - 小对象
+  - 无需调整
+- 永久代（1.7）Perm Generation/元数据区（1.8）Metaspace（堆之外区域）
+  - 永久代 元数据 -class
+  - 永久代必须指定大小限制，元数据可以设置（1.7），也可以不设置，无上限（受限于物理内存）
+  - 字符串常量（1.7--永久代 ） （1.8--堆）
+  - MethodArea逻辑概念--永久代、元数据（class信息，代码编译信息、代码层次信息）
+- 老年代
+  - 顽固分子
+  - 老年代满了FGC FULL GC
+- 新生代=eden+2个suvivor区
+  - YGC回收之后，大多数的对象会被回收，活着进入S0
+  - 再次YGC，活着的对象eden+S0---》S1
+  - 再次YGC，eden+S1---》S0
+  - 年龄足够----》老年代（15 CMS  6）
+  - S区装不下，----》老年代
+- GC Tuning (Generation)
+  - 尽量减少FGC
+  - MinorGC=YGC
+  - MajorGC=FGC
+
+对象何时进入老年代
+
+- 超过XX:MaxTenuringThreshold指定次数  （：躲过指定垃圾回收次数）
+  - Parallel Scavenge 15
+  - CMS 6
+  - G1 15
+- 动态年龄  （ Survivor区域内年龄1+年龄2+年龄3+年龄n的对象总和大于Survivor区的50% ）
+  - s1 -》s2超过50%
+  - 把年龄最大的放入O
+-  如果一次Young GC后存活对象太多无法进入Survivor区,此时直接进入老年代 
+-  大对象直接进入老年代 
+
+对象分配过程图
+
+![image-20201204191645264](image-20201204191645264.png)
+
+垃圾回收器历史过程。
+
+jdk诞生Serial追随提高效率，诞生了PS(Parallel Scavenge)PO(parallel Old)，为了配合CMS，诞生了PN（ParNew），CMS是1.4版本后期引入，CMS是里程碑式的GC，它开启了并发回收的过程，但是CMS（concurrent mark sweep）毛病较多，因此目前没有任何一个JDK版本默认是CMS。并发是为了不要STW。![image-20201206125325718](image-20201206125325718.png)
+
+- Serial年轻代 串行回收
+
+- PS 年轻代 并行回收
+
+- ParNew年轻代 配合CMS的并行回收
+
+- SerialOld
+
+- ParallelOld
+
+- ConcurrentMarkSweep老年代并发，垃圾回收和应用程序同时运行，降低STW的时间（20ms）
+
+  三色标记+incremental Update
+
+- G1(10ms)
+
+  三色屏障+SATB
+
+- ZGC(1ms)  PK  C++
+
+  ColoredPointers+写屏障
+
+- Shenandoah
+
+  ColoredPointers+读屏障
+
+- Eplison
+
+- 默认 PS+ParallelOld
+
+垃圾回收器和内存有关
+
+- Serial 几十兆
+- PS 上百兆 几个G
+- CMS  20G
+- G1 上百G
+- ZGC 4T
+
+CMS的问题
+
+- Memory Fragmentation
+
+  当使用内存比较大的服务器时，时间久了，内存碎片会比较多，老年代的内存占用过多，新生代到老年代的后内存不够用，这时会将serialOld出来清理，清理会特比慢。
+
+- Floating Garbage
+
+  当老年代占用过多，而在程序运行时产生浮动垃圾，这时有serialOld出来清理，
+
+解决方案：降低触发CMS的阈值，以保持老年代有足够的空间 -XX:CMSSInitiatingOccupancyFractioin 92%
+
+## JVM调优
+
+内存泄漏memory leak（有个对象一直占用内存，其他对象也用不了，一直没回收）
+
+内存溢出out of memory（一直创建对象，占用内存，直到爆了）
+
+GC日志详解：
+
+![image-20201206141557800](image-20201206141557800.png)
+
+吞吐量：用户代码习性时间/（用户代码执行时间+垃圾回收时间）
+
+响应时间：STW越短，响应时间约好
+
+所谓调优：首先确定追求啥？吞吐量优先（PS+PO）【科学计算、数据挖掘、thrupt】，还是响应时间优先（1.8G1）【网站GUI API】，还是在满足一定时间的情况下，要求达到多大的吞吐量。。
+
+什么是调优
+
+- 根据需求进行JVM规范和预调优
+- 优化运行JVM运行环境
+- 解决JVM运行过程中出现的各种问题（OOM）
+
+步骤：
+
+- 熟悉业务场景（没有最好的垃圾回收器，只有最适合的垃圾回收器）
+  - 响应时间、停顿时间（cms g1 zgc）
+  - 吞吐量=用户时间/(用户时间+GC时间)
+- 选择回收器组合
+- 计算内存需求（经验值1.5 G 16G）
+- 选定CPU（越高越高）
+- 设定年代大小、升级年龄
+- 设定日志参数
+  - 自己设定（日志名字路径，多少个日志，每个日志多大）
+  - 或者每天产生一个日志文件
+- 观察日志情况
 

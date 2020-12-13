@@ -271,6 +271,26 @@ jvm内存分代模型（用于分代垃圾回收算法）
   - MinorGC=YGC
   - MajorGC=FGC
 
+### YGC（Young GC） / MinorGC:
+
+###### 其实是一个东西，作用都是针对新生代（young gen）进行的垃圾回收，新生代空间不足会触发。
+
+### OldGC:
+
+###### 针对老年代的垃圾回收，老年代空间不足会触发。
+
+### FGC：
+
+###### 针对新生代，老年代都进行一次垃圾回收，所以是 Full (全部)GC。在堆的使用率超过80% 会触发，代码中显式调用 ：System.GC；也会不定时触发。
+
+### MixedGC:
+
+###### G1收集器特有的概念，在堆内存使用率超过45%就会触发的对新生代和老年代都进行的一次混合型GC，效率会比FGC要高，功能和FGC类似。
+
+### MajorGC:
+
+###### Major(主要的)GC这个概念很模糊，有一批人觉得针对老年代的OldGC就是MajorGC，有一批觉得针对Young 和 old 同时进行的FGC才算是MajorGC。
+
 对象何时进入老年代
 
 - 超过XX:MaxTenuringThreshold指定次数  （：躲过指定垃圾回收次数）
@@ -377,3 +397,101 @@ GC日志详解：
   - 或者每天产生一个日志文件
 - 观察日志情况
 
+系统CPU经常100%，如何调优？
+
+- 找出哪个进程CPU高（top）
+- 找到该进程中哪个线程CPU高（top-Hp）
+- 导出该线程的堆栈（jstack）
+- 查找哪个方法（栈帧）消耗比较高（jstack）
+
+系统内存飙高，如何查找问题？
+
+- 导出堆内存（jmap）
+- 分析（jhat jvisualvm mat jprofiler...）
+
+如何监控JVM
+
+- jstat jvisualvm jprofiler arthas top...
+
+调优：
+
+- java -Xms200M -Xmx200M -XX:+PrintGC com.mashibing.jvm.gc.T15_FullGC_Problem01
+
+- 一般运维团队首先受到报警信息（CPU Memory）
+
+- top命令观察到问题：内存不断增长 CPU占用率居高不下
+
+- top -Hp 3462(进程号)   查看进程中的线程，哪个线程CPU和内存占比高
+
+- jstack  10050(进程号)  查看具体线程，其中nid是12位数字对应上面命令中线程号（10进制）
+
+- jps定位具体java进程
+
+  jstack定位线程状况，重点关注：WAITING BLOCKED
+
+  例如：waiting on <0x0000088ca3310>(java.lang.Object),假如有一个线程中有100个线程，很多线程都在waiting on<xx>,一定要找到哪个线程持有这把锁。搜索jstack dump的信息，找<xx>,看哪个线程持有这把锁RUNNABLE
+
+- jinfo pid  查看进程在jvm中信息
+
+- jstat -gc 进程号 （时间【每多少秒打印】）动态观察gc情况/阅读GC日志发现频繁GC/arthas观察/jconsole/Jprofiler(最好用)
+
+  - jconsole远程连接（设置参数）
+  - Java VisualVM连接（容易）
+  - Jprofiler（这个最好，这3个图形化界面自身会消耗cpu，图形化界面用于测试，压测）
+  - cmdline arthas(非图形化界面)
+
+  jstat -gc 4655 500：每500个毫秒打印GC的情况
+
+- jmap -histo 4655 | head -20，查找有多少对象产生
+
+- jmap -dump:format=b,file=xxx pid /jmap -histo
+
+  线上系统，内存特别大，jmap执行期间会对进程产生很大影响，甚至卡顿（电商不适合）
+
+  设定参数HeapDump,OOM的时候会自动产生堆转储文件
+
+  很多服务器备份进行高可用，停掉这台服务器对其他服务器不影响
+
+  在线定位
+
+- java -Xms20M -Xmx20M -XX:+UseParallelGC -XX:+HeapDumpOnOutOfMermoryError com.mashibing.jvm.gc.T15_FullGC_Problem01
+
+- 使用MAT/jhat进行dump文件分析
+
+- 找到代码问题
+
+arthas在线排查工具
+
+案例汇总
+
+OOM产生的原因多种多样，有些程序未必产生OOM，不断FGC（CPU飙高，但内存回收特别少）
+
+- 硬件升级系统反而卡顿(在线文件阅读系统，原本1.5G内存，虽然慢，但能页面显示，但达到15G反而卡顿)
+
+- 线程池不当运用产生OOM问题（不断往List加对象，Low，）
+
+- smile jira问题  （12306晚上不准买票可能重启维护，游戏维护  ）
+
+- tomcat max-http-header-size过大问题 （http相关的对象占内存比较大）
+
+- lambda表达式导致方法区溢出问题
+
+  LambdaGC.java  -XX:MaxMetaspaceSize=9M -XX:+PrintGCDetails
+
+- 直接内存溢出问题（少见）
+
+  《深入理解java虚拟机》P59，使用Unsafe分配直接内存，或者使用NIO的问题
+
+- 栈溢出问题
+
+  -Xss设定太小
+
+- 重写finalize引发GC
+
+  小米云，HBase同步，系统通过nginx访问超时报警，最后排查，C++程序员重写finalize引发频繁GC问题：C++要手动清理内存，finalize耗时比较长的操作
+
+- 如果有个系统，内存一直消耗不超过10%，但观察GC日志，发现FGC总是频繁产生，会是什么引起的
+
+  System.gc();有人使用了这个
+
+  

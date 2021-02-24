@@ -431,7 +431,7 @@ GC日志详解：
 
   例如：waiting on <0x0000088ca3310>(java.lang.Object),假如有一个线程中有100个线程，很多线程都在waiting on<xx>,一定要找到哪个线程持有这把锁。搜索jstack dump的信息，找<xx>,看哪个线程持有这把锁RUNNABLE
 
-- jinfo pid  查看进程在jvm中信息
+- jinfo pid  查看进程在jvm中信息 
 
 - jstat -gc 进程号 （时间【每多少秒打印】）动态观察gc情况/阅读GC日志发现频繁GC/arthas观察/jconsole/Jprofiler(最好用)
 
@@ -494,4 +494,76 @@ OOM产生的原因多种多样，有些程序未必产生OOM，不断FGC（CPU�
 
   System.gc();有人使用了这个
 
-  
+
+## GC算法的基础概念
+
+card Table
+
+由于做YGC时，需要扫描整个OLD区，效率非常低，所以JVM设计了CardTable,如果一个OLD区CardTable中有对象指向Y区，就将它设为Dirty,下次扫描时，只需要扫描Dirty Card,在结构上，Card Table用BitMap来实现。
+
+G1垃圾回收器会产生GFC,当老年代内存不足时。当产生FGC时，1、扩大内存；2、提高CPU性能（回收的快，业务逻辑产生对象的速度固定，垃圾回收越快，内存空间越大）3、降低MixedGC触发的阈值，让MixedGC提早发生（默认45%）
+
+为什么G1用SATB
+
+灰色--->白色引用消失时，如果没有黑色指向白色引用会被push到堆栈，下次扫描时拿到这个引用个，由于有RSet的存在，不需要扫描整个堆去查找指向白色的引用，效率比较高SATB配合RSet，浑然天成。
+
+CMS和G1的优缺点
+
+https://zhuanlan.zhihu.com/p/161204689
+
+### CMS的优点：
+
+- 支持并发收集.
+- 低停顿,因为CMS可以控制将耗时的两个stop-the-world操作保持与用户线程恰当的时机并发执行，并且能保证在短时间执行完成，这样就达到了近似并发的目的.
+
+### CMS的缺点：
+
+- CMS收集器对CPU资源非常敏感,在并发阶段虽然不会导致用户线程停顿，但是会因为占用了一部分CPU资源，如果在CPU资源不足的情况下应用会有明显的卡顿。
+- 无法处理浮动垃圾：在执行‘并发清理’步骤时，用户线程也会同时产生一部分可回收对象，但是这部分可回收对象只能在下次执行清理是才会被回收。如果在清理过程中预留给用户线程的内存不足就会出现‘Concurrent Mode Failure’,一旦出现此错误时便会切换到SerialOld收集方式。
+- CMS清理后会产生大量的内存碎片，当有不足以提供整块连续的空间给新对象/晋升为老年代对象时又会触发FullGC。且在1.9后将其废除。
+
+### **G1的特点**
+
+- 并行与并发：G1充分发挥多核性能，使用多CPU来缩短Stop-The-world的时间，
+- 分代收集：G1能够自己管理不同分代内已创建对象和新对象的收集。
+- 空间整合：G1从整体上来看是基于‘标记-整理’算法实现，从局部（相关的两块Region）上来看是基于‘复制’算法实现，这两种算法都不会产生内存空间碎片。
+- 可预测的停顿：它可以自定义停顿时间模型，可以指定一段时间内消耗在垃圾回收商的时间不大于预期设定值。
+
+## jdk版本和垃圾收集器对应关系
+
+1. 使用jcmd
+
+   ```javascript
+   # 假java进程id为9872
+   # Linux
+   jcmd 9872 PerfCounter.print |grep gc.collector.*name
+   # Windows
+   jcmd 9872 PerfCounter.print |findstr gc.collector.*name
+   
+   # 以串行收集器(-XX:+UseParallelGC )为例，返回信息如下：
+   sun.gc.collector.0.name="PSScavenge"
+   sun.gc.collector.1.name="PSParallelCompact"
+   ```
+
+2.  名称与收集器对照表
+
+   | 名称                               | 收集器                | 作用区域               |                         启用参数                          |
+   | :--------------------------------- | :-------------------- | :--------------------- | :-------------------------------------------------------: |
+   | Copy                               | Serial                | Young                  |                     -XX:+UseSerialGC                      |
+   | MSC                                | Serial Old            | Old                    |                     -XX:+UseSerialGC                      |
+   | PSScavenge                         | Parallel Scavenge     | Young                  |                    -XX:+UseParallelGC                     |
+   | PSMarkSweep                        | Parallel Scavenge     | Old                    |         -XX:+UseParallelGC -XX:-UseParallelOldGC          |
+   | PSParallelCompact                  | Parallel Old          | Old                    |                    -XX:+UseParallelGC                     |
+   | PCopy                              | ParNew                | Young                  | -XX:+UseConcMarkSweepGC 或者 -XX:+UseParNewGC(JDK9起废除) |
+   | CMS                                | Concurrent Mark Sweep | Old                    |   -XX:+UseConcMarkSweepGC (JDK9起标识为过期，由G1接班)    |
+   | G1 incremental collections         | G1                    | Young或者Young+部分Old |              -XX:+UseG1GC(JDK9起默认收集器)               |
+   | G1 stop-the-world full collections | G1                    | Full                   |                       -XX:+UseG1GC                        |
+
+3.  各Java版本默认收集器 
+
+| 版本  | Young                         | Old                             |
+| :---- | :---------------------------- | :------------------------------ |
+| JDK6  | PSScavenge(Parallel Scavenge) | PSMarkSweep (Parallel Scavenge) |
+| JDK7  | PSScavenge(Parallel Scavenge) | PSParallelCompact(Parallel Old) |
+| JDK8  | PSScavenge(Parallel Scavenge) | PSParallelCompact(Parallel Old) |
+| JDK11 | G1                            | G1                              |

@@ -1,4 +1,4 @@
-# Socket和ServerSocket的简单介绍及例子
+# Socket和ServerSocket、WebSocket的简单介绍及例子
 
 ### Socket 类
 
@@ -75,3 +75,19 @@ package com.zhoufenqin.socket.server; import java.io.BufferedReader;import java.
 结果如下所示： 
 ![这里写图片描述](https://img-blog.csdn.net/20151217222304502) 
 ![这里写图片描述](https://img-blog.csdn.net/20151217222315564)
+
+### **WebSocket**
+
+> WebSocket是一种通信协议，可在单个TCP连接上进行全双工通信。WebSocket使得客户端和服务器之间的数据交换变得更加简单，允许服务端主动向客户端推送数据。在WebSocket API中，浏览器和服务器只需要完成一次握手，两者之间就可以建立持久性的连接，并进行双向数据传输。
+
+首先，要明白WebSocket是一种通信协议，区别于HTTP协议，HTTP协议只能实现客户端请求，服务端响应的这种单项通信。
+而WebSocket可以实现客户端与服务端的双向通讯，说白了，最大也是最明显的区别就是可以做到服务端主动将消息推送给客户端。
+
+其余的特点有：
+
+- 握手阶段采用 HTTP 协议。
+- 数据格式轻量，性能开销小。客户端与服务端进行数据交换时，服务端到客户端的数据包头只有2到10字节，客户端到服务端需要加上另外4字节的掩码。HTTP每次都需要携带完整头部。
+- 更好的二进制支持，可以发送文本，和二进制数据
+- 没有同源限制，客户端可以与任意服务器通信
+- 协议标识符是ws（如果加密，则是wss），请求的地址就是后端支持websocket的API。
+
